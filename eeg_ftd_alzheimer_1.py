@@ -51,15 +51,21 @@ from scipy.signal import stft, welch
 #%% 2) Data import and labels
 
 
+
+# To identify the base directory address 
 BASE_DIR = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
 WORKSPACE_DIR = BASE_DIR.parent if BASE_DIR.name == "EEG_FTD_Alzheimer" else BASE_DIR
 
 
+
+# Directories
 DATASET_DIR = WORKSPACE_DIR / "ds004504"
 DERIVATIVES_DIR = DATASET_DIR / "derivatives"
 PARTICIPANTS_FILE = DATASET_DIR / "participants.tsv"
 
 
+
+# Dictionary to match the data with labels
 group_map = {
     "A": "Alzheimer Disease Group",
     "F": "Frontotemporal Dementia Group",
@@ -67,19 +73,28 @@ group_map = {
 }
 
 
+
+# Collecting participant (subject) information to match them with labels
 participants_df = pd.read_csv(PARTICIPANTS_FILE, sep="\t")
 participants_df = participants_df.rename(columns={"Group": "group_code"})
 participants_df["group_name"] = participants_df["group_code"].map(group_map)
 
 
+
+# Loop to gather the data
+
 records = []
 
-for set_path in sorted(DERIVATIVES_DIR.glob("sub-*/eeg/*.set")):
-    participant_id = set_path.parent.parent.name
-    raw = mne.io.read_raw_eeglab(set_path, preload=True, verbose="ERROR")
+for set_path in sorted(DERIVATIVES_DIR.glob("sub-*/eeg/*.set")):            # look into this directory, by this structure 
+    
+    participant_id = set_path.parent.parent.name 
+    
+    raw = mne.io.read_raw_eeglab(set_path, preload=True, verbose="ERROR")   # read by using MNE library
 
-    signals_df = pd.DataFrame(raw.get_data().T, columns=raw.ch_names)
-    signals_df.insert(0, "time_sec", raw.times)
+    signals_df = pd.DataFrame(raw.get_data().T, columns=raw.ch_names)       # gather 19 channel signals
+    
+    signals_df.insert(0, "time_sec", raw.times)                             # add time information, we'll use it later
+
 
     records.append(
         {
@@ -96,8 +111,10 @@ for set_path in sorted(DERIVATIVES_DIR.glob("sub-*/eeg/*.set")):
 
 
 
+# Generate new dataframe
 eeg_df = pd.DataFrame(records)
-eeg_df = eeg_df.merge(participants_df, on="participant_id", how="left")
+
+eeg_df = eeg_df.merge(participants_df, on="participant_id", how="left")  # list by ID
 
 eeg_summary = eeg_df[
     [
