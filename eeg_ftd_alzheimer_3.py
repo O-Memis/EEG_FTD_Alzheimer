@@ -290,7 +290,7 @@ plt.show()
 
 
 
-#%% 4.6) 20-seconds segmented plots
+#%% 4.5) 20-seconds segmented plots
 
 
 
@@ -300,11 +300,11 @@ time_segment = time_sec[0:fs*20]
 
 
 #  Time domain
-plt.figure(figsize=(57, 10))
+plt.figure(figsize=(15, 5))
 plt.plot(time_segment, signal_segment, linewidth=2)
-plt.title(f"Time series | {participant_id} | {channel_name}")
+plt.title(f"20 seconds segment | {participant_id} | {channel_name}")
 plt.xlabel("Time (s)")
-plt.ylabel("Amplitude")
+plt.ylabel("Amplitude (0.1mV scale)")
 plt.tight_layout()
 plt.show()
 
@@ -316,7 +316,7 @@ noverlap = nperseg // 4
 freq_psd, psd = welch(signal_segment, fs=fs, nperseg=nperseg, noverlap=noverlap, window="hann")
 
 plt.figure(figsize=(15, 5))
-plt.plot(freq_psd, psd)
+plt.plot(freq_psd, psd, linewidth=2)
 plt.title(f"Periodogram (Welch PSD) | {participant_id} | {channel_name}")
 plt.xlabel("Frequency (Hz)")
 plt.ylabel("Power")
@@ -330,11 +330,11 @@ plt.show()
 # TF 1: Spectrogram
 freq_stft, time_stft, zxx = stft(signal_segment, fs=fs, window="hann", nperseg=nperseg, noverlap=noverlap)
 
-plt.figure(figsize=(20, 15))
+plt.figure(figsize=(12, 10))
 plt.pcolormesh(time_stft, freq_stft, np.abs(zxx), shading="gouraud")
 plt.title(f"Spectrogram | {participant_id} | {channel_name}")
 plt.xlabel("Time (s)")
-plt.ylim(0,30)                     # display up to 30 Hz 
+plt.ylim(0,45)                     
 plt.ylabel("Frequency (Hz)")
 plt.colorbar(label="Magnitude")
 plt.tight_layout()
@@ -351,7 +351,7 @@ sort_index = np.argsort(cwt_frequencies)
 cwt_frequencies = cwt_frequencies[sort_index]
 log_coefficients = log_coefficients[sort_index]
 
-plt.figure(figsize=(20, 15))
+plt.figure(figsize=(12, 10))
 plt.imshow(
     log_coefficients,
     extent=[time_segment[0], time_segment[-1], cwt_frequencies[0], cwt_frequencies[-1]],
@@ -1124,9 +1124,7 @@ model_ad = YOLO26CLS(weights=model_weights_cls, num_classes=2, dropout=dropout).
 
 
 counts_ad  = np.bincount(train_labels_bin_ad, minlength=2)
-
-raw_weights_ad = len(train_labels_bin_ad) / (2 * counts_ad)
-weights_ad = np.sqrt(raw_weights_ad)
+weights_ad = len(train_labels_bin_ad) / (2 * counts_ad)
 weights_ad = torch.tensor(weights_ad, dtype=torch.float32).to(device)
 
 
@@ -1331,10 +1329,9 @@ model_ftd = YOLO26CLS(weights=model_weights_cls, num_classes=2, dropout=dropout)
 
 
 counts_ftd  = np.bincount(train_labels_bin_ftd, minlength=2)
-
-raw_weights_ftd = len(train_labels_bin_ftd) / (2 * counts_ftd)
-weights_ftd = np.sqrt(raw_weights_ftd)
+weights_ftd = len(train_labels_bin_ftd) / (2 * counts_ftd)
 weights_ftd = torch.tensor(weights_ftd, dtype=torch.float32).to(device)
+
 
 
 
@@ -1539,10 +1536,9 @@ model_hc = YOLO26CLS(weights=model_weights_cls, num_classes=2, dropout=dropout).
 
 
 counts_hc  = np.bincount(train_labels_bin_hc, minlength=2)
-
-raw_weights_hc = len(train_labels_bin_hc) / (2 * counts_hc)
-weights_hc = np.sqrt(raw_weights_hc)
+weights_hc = len(train_labels_bin_hc) / (2 * counts_hc)
 weights_hc = torch.tensor(weights_hc, dtype=torch.float32).to(device)
+
 
 
 
