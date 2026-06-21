@@ -963,12 +963,12 @@ print(f"Device: {device}")
 
 
 # ----Hyperparameters  (shared across all three binary models)
-lr           = 0.00003
+lr           = 0.0001
 batch_size   = 8
 epochs       = 200
 dropout      = 0.20
-weight_decay = 0.001
-label_smooth = 0.02
+weight_decay = 0.0005
+label_smooth = 0.01
 grad_clip    = 2.0
 
 
@@ -1124,8 +1124,11 @@ model_ad = YOLO26CLS(weights=model_weights_cls, num_classes=2, dropout=dropout).
 
 
 counts_ad  = np.bincount(train_labels_bin_ad, minlength=2)
-weights_ad = len(train_labels_bin_ad) / (2 * counts_ad)
+
+raw_weights_ad = len(train_labels_bin_ad) / (2 * counts_ad)
+weights_ad = np.sqrt(raw_weights_ad)
 weights_ad = torch.tensor(weights_ad, dtype=torch.float32).to(device)
+
 
 print("model_ad — class counts  (0=rest, 1=AD):", counts_ad)
 print("model_ad — class weights:", weights_ad.detach().cpu().numpy())
@@ -1328,8 +1331,12 @@ model_ftd = YOLO26CLS(weights=model_weights_cls, num_classes=2, dropout=dropout)
 
 
 counts_ftd  = np.bincount(train_labels_bin_ftd, minlength=2)
-weights_ftd = len(train_labels_bin_ftd) / (2 * counts_ftd)
+
+raw_weights_ftd = len(train_labels_bin_ftd) / (2 * counts_ftd)
+weights_ftd = np.sqrt(raw_weights_ftd)
 weights_ftd = torch.tensor(weights_ftd, dtype=torch.float32).to(device)
+
+
 
 print("model_ftd — class counts  (0=rest, 1=FTD):", counts_ftd)
 print("model_ftd — class weights:", weights_ftd.detach().cpu().numpy())
@@ -1532,8 +1539,12 @@ model_hc = YOLO26CLS(weights=model_weights_cls, num_classes=2, dropout=dropout).
 
 
 counts_hc  = np.bincount(train_labels_bin_hc, minlength=2)
-weights_hc = len(train_labels_bin_hc) / (2 * counts_hc)
+
+raw_weights_hc = len(train_labels_bin_hc) / (2 * counts_hc)
+weights_hc = np.sqrt(raw_weights_hc)
 weights_hc = torch.tensor(weights_hc, dtype=torch.float32).to(device)
+
+
 
 print("model_hc — class counts  (0=rest, 1=HC):", counts_hc)
 print("model_hc — class weights:", weights_hc.detach().cpu().numpy())
@@ -1713,6 +1724,126 @@ plt.ylabel("True label")
 plt.title("Confusion Matrix - Test | model_hc")
 plt.tight_layout()
 plt.show()
+
+
+
+
+
+#%% 7.4) Validation-based threshold selection for combined predictions
+
+
+# Stack validation probabilities from the three binary models
+# Columns: [P(AD), P(FTD), P(HC)]
+y_proba_val_mc = np.stack(
+    [
+        y_proba_val_ad[:, 1],
+        y_proba_val_ftd[:, 1],
+        y_proba_val_hc[:, 1],
+    ],
+    axis=1
+)
+
+y_true_val_mc = val_labels_mc
+
+
+def predict_with_thresholds(y_proba, thresholds):
+    adjusted_scores = y_proba - thresholds.reshape(1, 3)
+    return np.argmax(adjusted_scores, axis=1)
+
+
+# Coarser grid: much faster than 0.01 step
+# 0.05 step gives 19 × 19 × 19 = 6859 combinations
+threshold_values = np.arange(0.05, 0.96, 0.05)
+
+best_thresholds = None
+best_val_score = -1
+
+
+for th_ad in threshold_values:
+    for th_ftd in threshold_values:
+        for th_hc in threshold_values:
+
+            thresholds = np.array([th_ad, th_ftd, th_hc], dtype=np.float32)
+
+            y_pred_val_mc = predict_with_thresholds(
+                y_proba_val_mc,
+                thresholds
+            )
+
+            # Use only weighted F1 inside the loop.
+            # This keeps the search loyal to your current final evaluation metric.
+            f1_val_thr = f1_score(
+                y_true_val_mc,
+                y_pred_val_mc,
+                average="weighted",
+                zero_division=0
+            )
+
+            if f1_val_thr > best_val_score:
+                best_val_score = f1_val_thr
+                best_thresholds = thresholds.copy()
+
+
+# After selecting the best thresholds, calculate full validation metrics once
+y_pred_val_best = predict_with_thresholds(
+    y_proba_val_mc,
+    best_thresholds
+)
+
+best_val_acc = accuracy_score(y_true_val_mc, y_pred_val_best)
+
+best_val_f1 = f1_score(
+    y_true_val_mc,
+    y_pred_val_best,
+    average="weighted",
+    zero_division=0
+)
+
+best_val_precision = precision_score(
+    y_true_val_mc,
+    y_pred_val_best,
+    average="weighted",
+    zero_division=0
+)
+
+best_val_recall = recall_score(
+    y_true_val_mc,
+    y_pred_val_best,
+    average="weighted"
+)
+
+
+print("\nBest validation-based thresholds")
+print("--------------------------------")
+print(f"AD threshold:  {best_thresholds[0]:.2f}")
+print(f"FTD threshold: {best_thresholds[1]:.2f}")
+print(f"HC threshold:  {best_thresholds[2]:.2f}")
+
+print("\nValidation performance with selected thresholds")
+print("------------------------------------------------")
+print(f"Val Accuracy:  {best_val_acc * 100:.2f}%")
+print(f"Val F1:        {best_val_f1 * 100:.2f}%")
+print(f"Val Precision: {best_val_precision * 100:.2f}%")
+print(f"Val Recall:    {best_val_recall * 100:.2f}%")
+
+
+cm_val_thresholded = confusion_matrix(y_true_val_mc, y_pred_val_best)
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(
+    cm_val_thresholded,
+    annot=True,
+    fmt="d",
+    cmap="Blues",
+    xticklabels=["AD", "FTD", "HC"],
+    yticklabels=["AD", "FTD", "HC"]
+)
+plt.xlabel("Predicted label")
+plt.ylabel("True label")
+plt.title("Confusion Matrix - Validation (Thresholded Combined OvR)")
+plt.tight_layout()
+plt.show()
+
 
 
 
@@ -1923,9 +2054,17 @@ proba_ad_test   = np.array(proba_ad_test)
 proba_ftd_test  = np.array(proba_ftd_test)
 proba_hc_test   = np.array(proba_hc_test)
 
+
+
 # y_proba_test_mc: (n_segments, 3)  —  columns: [P(AD), P(FTD), P(HC)]
 y_proba_test_mc = np.stack([proba_ad_test, proba_ftd_test, proba_hc_test], axis=1)
-y_pred_test_mc  = np.argmax(y_proba_test_mc, axis=1)
+
+# Apply validation-selected thresholds
+y_pred_test_mc = predict_with_thresholds(
+    y_proba_test_mc,
+    best_thresholds
+)
+
 
 
 acc_test  = accuracy_score(y_true_test_mc, y_pred_test_mc)
@@ -2004,13 +2143,20 @@ y_true_test_subj  = []
 y_pred_test_subj  = []
 y_proba_test_subj = []
 
+
+
 for sid in subject_ids_sorted:
     proba_array = np.array(subject_proba_dict[sid])   # (n_segments_subj, 3)
     mean_proba  = proba_array.mean(axis=0)             # (3,)
-    pred_class  = int(np.argmax(mean_proba))
+
+    # Apply the same validation-selected thresholds at subject level
+    adjusted_mean_proba = mean_proba - best_thresholds
+    pred_class = int(np.argmax(adjusted_mean_proba))
+
     y_true_test_subj.append(subject_true_dict[sid])
     y_pred_test_subj.append(pred_class)
     y_proba_test_subj.append(mean_proba)
+
 
 y_true_test_subj  = np.array(y_true_test_subj)
 y_pred_test_subj  = np.array(y_pred_test_subj)
